@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>gyro / rotate</title>
+<style>
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    color: #000000;
+    font-family: Arial, Helvetica, sans-serif;
+  }
+
+  .wrap {
+    max-width: 560px;
+    margin: 0 auto;
+    padding: 64px 24px 96px;
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    margin: 0 0 6px;
+  }
+
+  .sub {
+    font-size: 13px;
+    color: #444;
+    margin: 0 0 32px;
+    line-height: 1.5;
+  }
+
+  .status {
+    margin: 0 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #555;
+  }
+
+  .dot {
+    width: 0px;
+    height: 0px;
+    border-radius: 50%;
+    background: #bbb;
+    flex-shrink: 0;
+  }
+
+  .dot.live { background: #000; }
+
+  .pad {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    aspect-ratio: 1 / 1;
+    margin: 0 auto;
+    border: 1px solid #000;
+    border-radius: 50%;
+    background:
+      linear-gradient(#eee 1px, transparent 1px) 0 0/25% 25%,
+      linear-gradient(90deg, #eee 1px, transparent 1px) 0 0/25% 25%;
+    background-color: #fdfdfd;
+    overflow: hidden;
+  }
+  .pad::before, .pad::after {
+    content: "";
+    position: absolute;
+    background: #eee;
+  }
+  .pad::before { left: 50%; top: 0; bottom: 0; width: 1px; transform: translateX(-0.5px); }
+  .pad::after  { top: 50%; left: 0; right: 0; height: 1px; transform: translateY(-0.5px); }
+
+  .cursor {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #000;
+    left: 0;
+    top: 0;
+    transform: translate(-50%, -50%);
+    transition: opacity 0.2s ease;
+    box-shadow: 0 0 0 5px rgba(0,0,0,0.08);
+    opacity: 0.25;
+    pointer-events: none;
+    will-change: transform;
+  }
+  .cursor.live { opacity: 1; }
+
+  .axis-label {
+    position: absolute;
+    font-family: 'Arial', monospace;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    color: #999;
+    text-transform: uppercase;
+  }
+  .axis-label.n { left: 50%; top: 8px; transform: translateX(-50%); }
+  .axis-label.s { left: 50%; bottom: 8px; transform: translateX(-50%); }
+  .axis-label.w { left: 8px; top: 50%; transform: translateY(-50%); }
+  .axis-label.e { right: 8px; top: 50%; transform: translateY(-50%); }
+
+  .panel {
+    margin-top: 24px;
+    border: 1px solid #000;
+    padding: 12px 16px;
+  }
+
+  .panel-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #000;
+    margin: 0 0 6px;
+  }
+
+  .panel .row {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    padding: 4px 0;
+  }
+
+  .panel .row:last-child { border-bottom: none; }
+
+  .panel .row span:first-child {
+    color: #777;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 10px;
+  }
+
+  .panel .row span:last-child {
+    font-family: 'Arial', monospace;
+    font-size: 14px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .transport {
+    margin-top: 24px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .transport button {
+    background: #fff;
+    border: 1px solid #000;
+    color: #000;
+    font-family: inherit;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 10px 18px;
+    cursor: pointer;
+  }
+
+  .transport button:hover:not(:disabled) { background: #000; color: #fff; }
+  .transport button:active:not(:disabled) { opacity: 0.7; }
+  .transport button:disabled { opacity: 0.3; cursor: default; }
+
+  .hint {
+    max-width: 420px;
+    margin: 24px auto 0;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #777;
+  }
+
+  .error {
+    max-width: 420px;
+    margin: 16px auto 0;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.6;
+    color: #b91c1c;
+    display: none;
+  }
+
+  .warn {
+    max-width: 420px;
+    margin: 12px auto 0;
+    text-align: center;
+    font-size: 11px;
+    line-height: 1.5;
+    letter-spacing: 0.02em;
+    color: #000;
+    background: #f5f5f5;
+    border: 1px solid #000;
+    padding: 8px 12px;
+    display: none;
+  }
+  .warn.show { display: block; }
+</style>
+</head>
+<body>
+
+  <main class="wrap">
+
+    <h1>gyro / rotate</h1>
+    <p class="sub">
+      Reads device orientation (alpha/beta/gamma) from the browser's sensor and displays it live.
+      Best used on a phone or tablet. Some laptops have gyroscope sensors. Desktop computers do not have them.
+    </p>
+
+    <div class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">idle</span>
+    </div>
+
+    <div class="pad" id="pad">
+      <span class="axis-label n">0&deg;</span>
+      <span class="axis-label e">90&deg;</span>
+      <span class="axis-label s">180&deg;</span>
+      <span class="axis-label w">270&deg;</span>
+      <div class="cursor" id="cursor"></div>
+    </div>
+
+    <p class="warn" id="gimbalWarning">near-vertical tilt — left/right tracking becomes unreliable here (gimbal lock). tilt flatter for accurate readings.</p>
+
+    <section class="panel">
+      <p class="panel-title">raw sensor</p>
+      <div class="row"><span>alpha (heading)</span><span id="rawAlpha">&mdash;</span></div>
+      <div class="row"><span>beta (front/back)</span><span id="rawBeta">&mdash;</span></div>
+      <div class="row"><span>gamma (left/right)</span><span id="rawGamma">&mdash;</span></div>
+    </section>
+
+    <section class="panel">
+      <p class="panel-title">normalised (0&ndash;1)</p>
+      <div class="row"><span>alpha</span><span id="normAlpha">0.000</span></div>
+      <div class="row"><span>beta</span><span id="normBeta">0.000</span></div>
+      <div class="row"><span>gamma</span><span id="normGamma">0.000</span></div>
+    </section>
+
+    <div class="transport">
+      <button id="startBtn" type="button">start</button>
+      <button id="stopBtn" type="button" disabled>stop</button>
+    </div>
+
+    <p class="hint" id="hint">
+      On iPhone/iPad, Safari will ask for Motion and Orientation Access when you tap start - Allow it.
+      When stopped, you can also drag the dot around the pad to test the positioning.
+    </p>
+    <p class="error" id="errorMsg"></p>
+
+  </main>
+
+<script>
+  const startBtn = document.getElementById('startBtn');
+  const stopBtn = document.getElementById('stopBtn');
+  const statusText = document.getElementById('statusText');
+  const statusDot = document.getElementById('statusDot');
+  const cursor = document.getElementById('cursor');
+  const rawAlpha = document.getElementById('rawAlpha');
+  const rawBeta = document.getElementById('rawBeta');
+  const rawGamma = document.getElementById('rawGamma');
+  const normAlpha = document.getElementById('normAlpha');
+  const normBeta = document.getElementById('normBeta');
+  const normGamma = document.getElementById('normGamma');
+  const errorMsg = document.getElementById('errorMsg');
+  const gimbalWarning = document.getElementById('gimbalWarning');
+
+  const GIMBAL_WARN_DEG = 75;
+
+  let running = false;
+
+  let padRect = pad_getRect();
+  function pad_getRect(){
+    return document.getElementById('pad').getBoundingClientRect();
+  }
+  window.addEventListener('resize', () => { padRect = pad_getRect(); });
+
+  let targetNGamma = 0.5;
+  let targetNBeta = 0.5;
+  let paintScheduled = false;
+
+  function paintCursor(){
+    paintScheduled = false;
+    const x = targetNGamma * padRect.width;
+    const y = targetNBeta * padRect.height;
+    cursor.style.transform = `translate(${x - 6}px, ${y - 6}px)`;
+  }
+
+  function scheduleCursorPaint(nGamma, nBeta){
+    targetNGamma = nGamma;
+    targetNBeta = nBeta;
+    if (!paintScheduled){
+      paintScheduled = true;
+      requestAnimationFrame(paintCursor);
+    }
+  }
+
+  function setStatus(text, live){
+    statusText.textContent = text;
+    statusDot.classList.toggle('live', !!live);
+  }
+
+  function showError(msg){
+    errorMsg.textContent = msg;
+    errorMsg.style.display = 'block';
+  }
+
+  function clearError(){
+    errorMsg.style.display = 'none';
+  }
+
+  function clamp01(v){
+    return Math.max(0, Math.min(1, v));
+  }
+
+  function getHeading(e){
+    if (typeof e.webkitCompassHeading === 'number' && !isNaN(e.webkitCompassHeading)) {
+      return e.webkitCompassHeading;
+    }
+    return e.alpha != null ? e.alpha : 0;
+  }
+
+  function handleOrientation(e){
+    const a = getHeading(e);
+    const b = e.beta != null ? e.beta : 0;
+    const g = e.gamma != null ? e.gamma : 0;
+
+    rawAlpha.textContent = a.toFixed(1) + '\u00b0';
+    rawBeta.textContent = b.toFixed(1) + '\u00b0';
+    rawGamma.textContent = g.toFixed(1) + '\u00b0';
+
+    const nAlpha = clamp01(a / 360);
+    const nBeta = clamp01((b + 180) / 360);
+    const nGamma = clamp01((g + 90) / 180);
+
+    normAlpha.textContent = nAlpha.toFixed(3);
+    normBeta.textContent = nBeta.toFixed(3);
+    normGamma.textContent = nGamma.toFixed(3);
+
+    scheduleCursorPaint(nGamma, nBeta);
+
+    gimbalWarning.classList.toggle('show', Math.abs(b) > GIMBAL_WARN_DEG);
+  }
+
+  async function requestOrientationPermission(){
+
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const response = await DeviceOrientationEvent.requestPermission();
+      return response === 'granted';
+    }
+    return true;
+  }
+
+  startBtn.addEventListener('click', async () => {
+    if (running) return;
+    clearError();
+    startBtn.disabled = true;
+
+    if (typeof DeviceOrientationEvent === 'undefined') {
+      showError('This browser does not expose device orientation/gyroscope data.');
+      setStatus('unsupported');
+      startBtn.disabled = false;
+      return;
+    }
+
+    setStatus('requesting motion access…');
+    let granted = false;
+    try {
+      granted = await requestOrientationPermission();
+    } catch (err) {
+      console.error(err);
+      granted = false;
+    }
+    if (!granted) {
+      showError('Motion & orientation access was denied. Enable it in your browser/site settings and reload.');
+      setStatus('permission denied');
+      startBtn.disabled = false;
+      return;
+    }
+
+    padRect = pad_getRect();
+    window.addEventListener('deviceorientation', handleOrientation);
+    running = true;
+    setStatus('tracking', true);
+    cursor.classList.add('live');
+    stopBtn.disabled = false;
+  });
+
+  stopBtn.addEventListener('click', () => {
+    if (!running) return;
+    running = false;
+    window.removeEventListener('deviceorientation', handleOrientation);
+    stopBtn.disabled = true;
+    startBtn.disabled = false;
+    cursor.classList.remove('live');
+    gimbalWarning.classList.remove('show');
+    setStatus('idle');
+  });
+
+  const pad = document.getElementById('pad');
+
+  function setManualPosition(clientX, clientY){
+    padRect = pad_getRect();
+    const nGamma = clamp01((clientX - padRect.left) / padRect.width);
+    const nBeta = clamp01((clientY - padRect.top) / padRect.height);
+
+    scheduleCursorPaint(nGamma, nBeta);
+    cursor.classList.add('live');
+
+    const g = (nGamma * 180) - 90;
+    const b = (nBeta * 360) - 180;
+
+    rawGamma.textContent = g.toFixed(1) + '\u00b0 (manual)';
+    rawBeta.textContent = b.toFixed(1) + '\u00b0 (manual)';
+    normGamma.textContent = nGamma.toFixed(3);
+    normBeta.textContent = nBeta.toFixed(3);
+
+    setStatus('manual test');
+  }
+
+  let dragging = false;
+
+  pad.addEventListener('pointerdown', (e) => {
+    if (running) return; // don't fight with live sensor data
+    dragging = true;
+    setManualPosition(e.clientX, e.clientY);
+  });
+
+  window.addEventListener('pointermove', (e) => {
+    if (!dragging || running) return;
+    setManualPosition(e.clientX, e.clientY);
+  });
+
+  window.addEventListener('pointerup', () => {
+    dragging = false;
+  });
+</script>
+</body>
+</html>
